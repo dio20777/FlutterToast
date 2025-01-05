@@ -62,7 +62,8 @@ class Toast {
         'duration': (duration ?? 1) * 1000,
         'gravity': toastGravity,
         'bgcolor': backgroundColor.toString(),
-        'textcolor': webTexColor.value.toRadixString(16),
+        'textcolor':
+            '${(webTexColor.a.toInt() << 24 | webTexColor.r.toInt() << 16 | webTexColor.g.toInt() << 8 | webTexColor.b.toInt()).toRadixString(16).padLeft(8, '0')}',
         'webShowClose': webShowClose,
       };
       ToastContext()._channel?.invokeMethod("showToast", params);
