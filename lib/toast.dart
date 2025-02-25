@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -85,18 +87,22 @@ class Toast {
   }
 }
 
+
 class ToastView {
   static final ToastView _singleton = ToastView._internal();
+  static OverlayState? overlayState;
+  static OverlayEntry? _overlayEntry;
+  static bool _isVisible = false;
+
+  // 新增佇列相關變數
+  static final Queue<_ToastItem> _toastQueue = Queue<_ToastItem>();
+  static bool _isProcessing = false;
 
   factory ToastView() {
     return _singleton;
   }
 
   ToastView._internal();
-
-  static OverlayState? overlayState;
-  static OverlayEntry? _overlayEntry;
-  static bool _isVisible = false;
 
   static void createView(
       String msg,
@@ -109,8 +115,46 @@ class ToastView {
       TextAlign? textAlign,
       double backgroundRadius,
       Border? border,
-      bool? rootNavigator) async {
-    overlayState = Overlay.of(context, rootOverlay: rootNavigator ?? false);
+      bool? rootNavigator) {
+
+    // 將 Toast 加入佇列
+    _toastQueue.add(_ToastItem(
+      msg: msg,
+      context: context,
+      duration: duration,
+      gravity: gravity,
+      background: background,
+      textStyle: textStyle,
+      textDirection: textDirection,
+      textAlign: textAlign,
+      backgroundRadius: backgroundRadius,
+      border: border,
+      rootNavigator: rootNavigator,
+    ));
+
+    // 如果沒有正在處理的 Toast，開始處理佇列
+    if (!_isProcessing) {
+      _processToastQueue();
+    }
+  }
+
+  static Future<void> _processToastQueue() async {
+    if (_toastQueue.isEmpty) {
+      _isProcessing = false;
+      return;
+    }
+
+    _isProcessing = true;
+    while (_toastQueue.isNotEmpty) {
+      final item = _toastQueue.removeFirst();
+      await _showToast(item);
+    }
+
+    _isProcessing = false;
+  }
+
+  static Future<void> _showToast(_ToastItem item) async {
+    overlayState = Overlay.of(item.context, rootOverlay: item.rootNavigator ?? false);
 
     _overlayEntry = OverlayEntry(
       builder: (BuildContext context) => ToastWidget(
@@ -121,24 +165,30 @@ class ToastView {
                 width: MediaQuery.of(context).size.width,
                 child: Container(
                   decoration: BoxDecoration(
-                    color: background,
-                    borderRadius: BorderRadius.circular(backgroundRadius),
-                    border: border,
+                    color: item.background,
+                    borderRadius: BorderRadius.circular(item.backgroundRadius),
+                    border: item.border,
                   ),
                   margin: const EdgeInsets.symmetric(horizontal: 20),
                   padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-                  child: Text(msg,
-                      softWrap: true,
-                      style: textStyle,
-                      textAlign: textAlign,
-                      textDirection: textDirection),
+                  child: Text(
+                    item.msg,
+                    softWrap: true,
+                    style: item.textStyle,
+                    textAlign: item.textAlign,
+                    textDirection: item.textDirection,
+                  ),
                 )),
           ),
-          gravity: gravity),
+          gravity: item.gravity),
     );
+
     _isVisible = true;
     overlayState!.insert(_overlayEntry!);
-    await Future.delayed(Duration(seconds: duration ?? Toast.lengthShort));
+
+    // 等待顯示時間
+    await Future.delayed(Duration(seconds: item.duration ?? Toast.lengthShort));
+
     dismiss();
   }
 
@@ -149,6 +199,35 @@ class ToastView {
     _isVisible = false;
     _overlayEntry?.remove();
   }
+}
+
+// Toast 項目類別
+class _ToastItem {
+  final String msg;
+  final BuildContext context;
+  final int? duration;
+  final int? gravity;
+  final Color background;
+  final TextStyle textStyle;
+  final TextDirection? textDirection;
+  final TextAlign? textAlign;
+  final double backgroundRadius;
+  final Border? border;
+  final bool? rootNavigator;
+
+  _ToastItem({
+    required this.msg,
+    required this.context,
+    this.duration,
+    this.gravity,
+    required this.background,
+    required this.textStyle,
+    this.textDirection,
+    this.textAlign,
+    required this.backgroundRadius,
+    this.border,
+    this.rootNavigator,
+  });
 }
 
 class ToastWidget extends StatelessWidget {
