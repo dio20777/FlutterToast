@@ -1,5 +1,3 @@
-import 'dart:collection';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -94,9 +92,10 @@ class ToastView {
   static OverlayEntry? _overlayEntry;
   static bool _isVisible = false;
 
-  // 新增佇列相關變數
-  static final Queue<_ToastItem> _toastQueue = Queue<_ToastItem>();
-  static bool _isProcessing = false;
+  // 只記錄最後一個要顯示的 Toast
+  static _ToastItem? _pendingToast;
+  // 用於追蹤當前是否有 Toast 正在顯示倒計時
+  static bool _isShowingTimer = false;
 
   factory ToastView() {
     return _singleton;
@@ -117,8 +116,8 @@ class ToastView {
       Border? border,
       bool? rootNavigator) {
 
-    // 將 Toast 加入佇列
-    _toastQueue.add(_ToastItem(
+    // 儲存最新的 Toast 請求
+    _pendingToast = _ToastItem(
       msg: msg,
       context: context,
       duration: duration,
@@ -130,30 +129,21 @@ class ToastView {
       backgroundRadius: backgroundRadius,
       border: border,
       rootNavigator: rootNavigator,
-    ));
+    );
 
-    // 如果沒有正在處理的 Toast，開始處理佇列
-    if (!_isProcessing) {
-      _processToastQueue();
-    }
+    // 立即顯示 Toast
+    _showToast();
   }
 
-  static Future<void> _processToastQueue() async {
-    if (_toastQueue.isEmpty) {
-      _isProcessing = false;
-      return;
-    }
+  static void _showToast() {
+    if (_pendingToast == null) return;
+    final item = _pendingToast!;
+    _pendingToast = null;
 
-    _isProcessing = true;
-    while (_toastQueue.isNotEmpty) {
-      final item = _toastQueue.removeFirst();
-      await _showToast(item);
-    }
+    // 如果有現有的 overlay，先移除
+    _overlayEntry?.remove();
+    _overlayEntry = null;
 
-    _isProcessing = false;
-  }
-
-  static Future<void> _showToast(_ToastItem item) async {
     overlayState = Overlay.of(item.context, rootOverlay: item.rootNavigator ?? false);
 
     _overlayEntry = OverlayEntry(
@@ -186,10 +176,19 @@ class ToastView {
     _isVisible = true;
     overlayState!.insert(_overlayEntry!);
 
-    // 等待顯示時間
-    await Future.delayed(Duration(seconds: item.duration ?? Toast.lengthShort));
-
-    dismiss();
+    // 只有在沒有正在運行的計時器時才啟動新的計時器
+    if (!_isShowingTimer) {
+      _isShowingTimer = true;
+      Future.delayed(Duration(seconds: item.duration ?? Toast.lengthShort), () {
+        _isShowingTimer = false;
+        // 檢查是否有待顯示的 Toast
+        if (_pendingToast != null) {
+          _showToast();
+        } else {
+          dismiss();
+        }
+      });
+    }
   }
 
   static dismiss() async {
@@ -198,6 +197,7 @@ class ToastView {
     }
     _isVisible = false;
     _overlayEntry?.remove();
+    _overlayEntry = null;
   }
 }
 
